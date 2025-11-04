@@ -16,7 +16,17 @@ class LinkBloc extends Bloc<LinkEvent, LinkState> {
       emit(const LinkState.loading());
       return emit.forEach(
         _repository.getLinkStream().expand((event) => [null, event]),
-        onData: (state) => state != null ? _Loaded(state) : const _Initial(),
+        onData: (state) {
+          if (state == null) return const _Initial();
+          // 전체 URI와 path를 모두 포함
+          try {
+            final uri = Uri.parse(state);
+            return _Loaded(link: uri.path, fullUri: state);
+          } catch (e) {
+            // URI 파싱 실패 시 원본 문자열 반환
+            return _Loaded(link: state, fullUri: state);
+          }
+        },
         onError: (error, stackTrace) {
           L.e(error, stackTrace);
           return const _Error();
@@ -35,6 +45,9 @@ class LinkEvent with _$LinkEvent {
 class LinkState with _$LinkState {
   const factory LinkState.initial() = _Initial;
   const factory LinkState.loading() = _Loading;
-  const factory LinkState.loaded(String link) = _Loaded;
+  const factory LinkState.loaded({
+    required String link,
+    String? fullUri,
+  }) = _Loaded;
   const factory LinkState.error() = _Error;
 }

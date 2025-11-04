@@ -165,6 +165,60 @@ class _Listeners extends StatelessWidget {
         BlocListener<LinkBloc, LinkState>(
           listener: (context, state) => state.mapOrNull(
             loaded: (s) => WidgetsBinding.instance.addPostFrameCallback((_) {
+              // /test 경로에서 key 파라미터 처리
+              if (s.link == '/test') {
+                try {
+                  String? finalKey;
+                  
+                  // fullUri가 있으면 전체 URI에서 파라미터 추출
+                  if (s.fullUri != null) {
+                    final uri = Uri.parse(s.fullUri!);
+                    // fragment에서 key 파라미터 추출 (#key=...)
+                    if (uri.fragment.isNotEmpty) {
+                      final fragmentParams = uri.fragment.split('&');
+                      for (final param in fragmentParams) {
+                        if (param.startsWith('key=')) {
+                          finalKey = param.replaceFirst('key=', '');
+                          break;
+                        }
+                      }
+                    }
+                    
+                    // query parameter에서도 시도 (?key=...)
+                    if (finalKey == null || finalKey.isEmpty) {
+                      finalKey = uri.queryParameters['key'];
+                    }
+                  }
+                  
+                  if (finalKey != null && finalKey.isNotEmpty) {
+                    // 히든메뉴 활성화
+                    context.read<HiddenMenuBloc>().add(
+                      HiddenMenuEvent.tryEnable(finalKey),
+                    );
+                    
+                    // API 채널 변경 - key 값이 채널 이름인지 확인
+                    final channelName = finalKey.toLowerCase();
+                    ApiChannel? targetChannel;
+                    for (final channel in ApiChannel.values) {
+                      if (channel.name.toLowerCase() == channelName) {
+                        targetChannel = channel;
+                        break;
+                      }
+                    }
+                    
+                    // 채널이 발견되면 변경
+                    if (targetChannel != null) {
+                      context.read<ApiChannelBloc>().add(
+                        ApiChannelEvent.setChannel(targetChannel),
+                      );
+                    }
+                  }
+                } catch (e) {
+                  L.e(e);
+                }
+                // /test 경로는 라우팅하지 않음
+                return;
+              }
               _router.pushPath(s.link);
             }),
           ),
