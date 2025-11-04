@@ -19,4 +19,7 @@ abstract class Config {
   static const String playStoreUrl = _Config.playStoreUrl;
   @EnviedField(defaultValue: 'https://apps.apple.com/app/id6744280856')
   static const String appStoreUrl = _Config.appStoreUrl;
+
+  @EnviedField()
+  static const String apiChannelKeyPublicKey = _Config.apiChannelKeyPublicKey;
 }

@@ -106,9 +106,11 @@ jobs:
           if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
             echo 'IDP_CLIENT_ID=dummy_idp_client_id' > .env
             echo "AMPLITUDE_API_KEY=dummy_key_for_fork" >> .env
+            echo "API_CHANNEL_KEY_PUBLIC_KEY=dummy_key_for_fork" >> .env
           else
             echo '${{ vars.DOTENV }}' > .env
             echo "AMPLITUDE_API_KEY=${{ secrets.AMPLITUDE_API_KEY }}" >> .env
+            echo "API_CHANNEL_KEY_PUBLIC_KEY=${{ secrets.API_CHANNEL_KEY_PUBLIC_KEY }}" >> .env
           fi
 
       - name: Generate files
