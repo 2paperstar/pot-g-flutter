@@ -21,5 +21,5 @@ abstract class Config {
   static const String appStoreUrl = _Config.appStoreUrl;
 
   @EnviedField()
-  static const String apiChannelKeySecret = _Config.apiChannelKeySecret;
+  static const String apiChannelKeyPublicKey = _Config.apiChannelKeyPublicKey;
 }

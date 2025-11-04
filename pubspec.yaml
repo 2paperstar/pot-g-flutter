@@ -36,6 +36,7 @@ dependencies:
   sheet: ^1.0.0
   nonce: ^1.2.0
   crypto: ^3.0.6
+  pointycastle: ^3.9.1
   flutter_web_auth_2: ^5.0.0-alpha.7
   adaptive_dialog: ^2.4.1
   collection: ^1.19.1

@@ -2,48 +2,66 @@
 
 ## 개요
 
-API 채널을 변경할 수 있는 검증된 키 시스템입니다. 운영진만 키를 생성할 수 있고, 앱에서 검증할 수 있습니다.
+API 채널을 변경할 수 있는 검증된 키 시스템입니다. **비대칭 암호화(RSA)**를 사용하여:
+- **운영진**: 개인키로 서명 생성 (개인키는 앱에 포함되지 않음)
+- **앱**: 공개키로 서명 검증 (공개키만 앱에 포함)
 
 ## 아키텍처
 
 - **키 형식**: `channel:timestamp:signature`
-- **서명 알고리즘**: HMAC-SHA256 (필수)
+- **서명 알고리즘**: RSA-PSS-SHA256 (비대칭 암호화)
 - **만료 시간**: 7일
-- **키 생성**: 운영진이 도구를 사용하여 생성 (시크릿 키 필요)
-- **키 검증**: 앱에서 자동으로 서명 검증 (필수)
-- **보안**: 타이밍 공격 방지를 위한 상수 시간 비교 사용
+- **키 생성**: 운영진이 개인키로 서명 생성
+- **키 검증**: 앱에서 공개키로 서명 검증 (필수)
 
 ### 서명/검증 프로세스
 
-1. **키 생성 (운영진)**:
+1. **키 생성 (운영진 - 개인키 사용)**:
    - 메시지 생성: `channel:timestamp`
-   - HMAC-SHA256 서명 계산: `HMAC(secret, "channel:timestamp")`
-   - 키 조합: `channel:timestamp:signature`
+   - RSA-PSS-SHA256 서명 계산: `RSA-PSS-SHA256(private_key, "channel:timestamp")`
+   - 키 조합: `channel:timestamp:signature` (signature는 base64 인코딩)
 
-2. **키 검증 (앱)**:
+2. **키 검증 (앱 - 공개키 사용)**:
    - 키 형식 검증 (`channel:timestamp:signature`)
    - 채널 이름 검증
    - 타임스탬프 검증 (만료 시간, 미래 타임스탬프 거부)
-   - **서명 검증 (필수)**: HMAC-SHA256으로 서명 재계산 및 비교
+   - **RSA 서명 검증 (필수)**: 공개키로 서명 재검증
    - 검증 실패 시 요청 거부
 
 ## 설정 방법
 
-### 1. 환경 변수 설정
-
-`.env` 파일을 생성하거나 환경 변수에 시크릿 키를 설정합니다:
+### 1. RSA 키 쌍 생성
 
 ```bash
-# 강력한 랜덤 키 생성
-openssl rand -hex 32
+# 키 쌍 생성 (한 번만 실행)
+./tools/generate_rsa_keypair.sh
 
-# .env 파일에 추가 또는 환경 변수로 설정
-export API_CHANNEL_KEY_SECRET=생성된_시크릿_키
+# 또는 수동으로 생성
+openssl genrsa -out keys/private_key.pem 2048
+openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
 ```
 
-### 2. envied 설정
+**중요**: 
+- 개인키(`private_key.pem`)는 **절대** 버전 관리에 포함하지 마세요
+- 개인키는 운영진만 보관하고 서명 생성에 사용합니다
+- 공개키(`public_key.pem`)만 앱에 포함됩니다
 
-`.env` 파일을 생성하고 `API_CHANNEL_KEY_SECRET` 변수를 추가합니다.
+### 2. 환경 변수 설정
+
+`.env` 파일을 생성하고 공개키를 설정합니다:
+
+```bash
+# 공개키 파일 내용을 복사하여 .env에 추가
+cat keys/public_key.pem >> .env
+# 또는 직접 설정
+API_CHANNEL_KEY_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
+-----END PUBLIC KEY-----"
+```
+
+### 3. envied 설정
+
+`.env` 파일에 `API_CHANNEL_KEY_PUBLIC_KEY` 변수를 추가합니다.
 
 그런 다음 빌드를 실행하여 `config.g.dart` 파일을 생성합니다:
 
@@ -51,14 +69,11 @@ export API_CHANNEL_KEY_SECRET=생성된_시크릿_키
 flutter pub run build_runner build --delete-conflicting-outputs
 ```
 
-### 3. 키 생성
+### 4. 키 생성
 
 ```bash
-# 환경 변수로 시크릿 키 설정
-export API_CHANNEL_KEY_SECRET=your-secret-key
-
-# 키 생성
-dart run tools/generate_api_channel_key.dart qa
+# 개인키로 서명 생성
+dart run tools/generate_api_channel_key.dart qa keys/private_key.pem
 ```
 
 출력 예시:
@@ -101,7 +116,7 @@ https://pot-g.gistory.me/test?key=qa:1734567890:abc123def456...
    - 키 형식 검증 (`channel:timestamp:signature`)
    - 채널 이름 검증
    - 타임스탬프 검증 (만료 시간 7일, 미래 타임스탬프 거부)
-   - **HMAC-SHA256 서명 검증 (필수)** - 상수 시간 비교로 타이밍 공격 방지
+   - **RSA-PSS-SHA256 서명 검증 (필수)** - 공개키로 검증
 5. **검증 실패 시**: 요청 거부 및 에러 메시지 표시
 6. **검증 성공 시**:
    - 히든메뉴 활성화
@@ -112,34 +127,41 @@ https://pot-g.gistory.me/test?key=qa:1734567890:abc123def456...
 
 ## 보안 고려사항
 
-1. **시크릿 키 관리**
-   - 시크릿 키는 절대 코드에 하드코딩하지 마세요
-   - 환경 변수 또는 안전한 설정 관리 시스템 사용
-   - 운영 환경과 개발 환경의 시크릿 키는 분리
+1. **개인키 관리**
+   - 개인키는 **절대** 코드나 버전 관리에 포함하지 마세요
+   - 개인키는 안전한 곳에 보관 (예: 암호화된 저장소, 비밀 관리 시스템)
+   - 운영진만 개인키에 접근 가능해야 합니다
+   - 공개키만 앱에 포함됩니다
 
-2. **키 만료**
+2. **공개키 관리**
+   - 공개키는 앱에 포함되어도 안전합니다 (검증만 가능)
+   - 공개키 변경 시 앱 업데이트 필요
+
+3. **키 만료**
    - 기본 만료 시간은 7일입니다
    - 필요시 `ApiChannelKeyValidator._expirationSeconds` 수정
 
-3. **키 공유**
+4. **키 공유**
    - 생성된 키는 안전한 채널을 통해 전달
    - 가능하면 암호화된 메시지로 전달
 
 ## 구현 파일
 
-- `lib/app/modules/core/domain/repositories/api_channel_key_validator.dart`: 검증 로직
-- `lib/app/values/config.dart`: envied 설정
+- `lib/app/modules/core/domain/repositories/api_channel_key_validator.dart`: RSA 공개키 검증 로직
+- `lib/app/values/config.dart`: envied 설정 (공개키)
 - `lib/app/pot_app.dart`: 딥링크 처리 및 검증 통합
-- `tools/generate_api_channel_key.dart`: 키 생성 도구
+- `tools/generate_api_channel_key.dart`: 개인키로 서명 생성 도구
+- `tools/generate_rsa_keypair.sh`: RSA 키 쌍 생성 스크립트
 
 ## 문제 해결
 
 ### 키 검증 실패
 
-1. 시크릿 키가 올바르게 설정되었는지 확인
+1. 공개키가 올바르게 설정되었는지 확인
 2. 키 형식이 올바른지 확인 (`channel:timestamp:signature`)
 3. 키가 만료되지 않았는지 확인 (7일)
 4. 타임스탬프 동기화 확인 (서버와 앱의 시간 차이)
+5. 개인키와 공개키가 쌍인지 확인
 
 ### envied 빌드 오류
 
@@ -147,11 +169,25 @@ https://pot-g.gistory.me/test?key=qa:1734567890:abc123def456...
 flutter pub run build_runner build --delete-conflicting-outputs
 ```
 
-### 시크릿 키 찾을 수 없음
+### 공개키 찾을 수 없음
 
 환경 변수가 설정되었는지 확인:
 ```bash
-echo $API_CHANNEL_KEY_SECRET
+echo $API_CHANNEL_KEY_PUBLIC_KEY
 ```
 
 또는 `.env` 파일이 올바른 위치에 있는지 확인하세요.
+
+### 개인키 파일 찾을 수 없음
+
+키 쌍을 먼저 생성하세요:
+```bash
+./tools/generate_rsa_keypair.sh
+```
+
+## 비대칭 암호화의 장점
+
+1. **보안성**: 개인키가 앱에 포함되지 않아 노출 위험이 없습니다
+2. **검증성**: 공개키만으로 서명 검증이 가능합니다
+3. **분리**: 서명 생성(운영진)과 검증(앱)이 완전히 분리됩니다
+4. **안전성**: 개인키 유출 시에만 새로운 키 쌍 생성이 필요합니다

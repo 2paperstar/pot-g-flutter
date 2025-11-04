@@ -1,7 +1,11 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:injectable/injectable.dart';
+import 'package:pointycastle/asymmetric/api.dart';
+import 'package:pointycastle/asymmetric/rsa.dart';
+import 'package:pointycastle/digests/sha256.dart';
+import 'package:pointycastle/formats/pkcs1_public_key_parser.dart';
+import 'package:pointycastle/pointycastle.dart';
 import 'package:pot_g/app/modules/core/domain/enums/api_channel.dart';
 import 'package:pot_g/app/values/config.dart';
 
@@ -31,13 +35,16 @@ class ApiChannelKeyValidationResult {
 /// 키 형식: `channel:timestamp:signature`
 /// - channel: 채널 이름 (dev, qa, prod)
 /// - timestamp: Unix timestamp (초 단위)
-/// - signature: HMAC-SHA256 서명 (hex 인코딩)
+/// - signature: RSA-PSS-SHA256 서명 (base64 인코딩)
 /// 
-/// 서명 계산: HMAC-SHA256(secret, "channel:timestamp")
+/// 서명 검증: RSA 공개키로 서명 검증
 @injectable
 class ApiChannelKeyValidator {
   /// 키 만료 시간 (초) - 기본 7일
   static const int _expirationSeconds = 7 * 24 * 60 * 60;
+
+  /// RSA 공개키 파서 (캐시)
+  RSAPublicKey? _cachedPublicKey;
 
   /// 키 검증
   /// 
@@ -55,7 +62,7 @@ class ApiChannelKeyValidator {
 
       final channelName = parts[0].toLowerCase();
       final timestampStr = parts[1];
-      final signature = parts[2];
+      final signatureBase64 = parts[2];
 
       // 채널 이름 검증
       ApiChannel? channel;
@@ -97,11 +104,12 @@ class ApiChannelKeyValidator {
         );
       }
 
-      // 서명 검증 (타이밍 공격 방지를 위한 상수 시간 비교)
+      // RSA 서명 검증
       final message = '$channelName:$timestampStr';
-      final expectedSignature = _computeSignature(message);
+      final messageBytes = utf8.encode(message);
+      final signatureBytes = base64Decode(signatureBase64);
       
-      if (!_constantTimeEquals(signature, expectedSignature)) {
+      if (!_verifySignature(messageBytes, signatureBytes)) {
         return const ApiChannelKeyValidationResult.invalid(
           'Invalid signature',
         );
@@ -115,36 +123,55 @@ class ApiChannelKeyValidator {
     }
   }
 
-  /// HMAC-SHA256 서명 계산
-  String _computeSignature(String message) {
-    final secret = _getSecret();
-    final key = utf8.encode(secret);
-    final bytes = utf8.encode(message);
-    final hmac = Hmac(sha256, key);
-    final digest = hmac.convert(bytes);
-    return digest.toString();
-  }
-
-  /// 시크릿 키 가져오기
+  /// RSA 서명 검증
   /// 
-  /// envied를 통해 환경 변수에서 가져옴
-  String _getSecret() {
-    return Config.apiChannelKeySecret;
-  }
-
-  /// 상수 시간 문자열 비교 (타이밍 공격 방지)
+  /// [messageBytes]: 원본 메시지 바이트
+  /// [signatureBytes]: 서명 바이트
   /// 
-  /// 두 문자열이 동일한지 상수 시간에 비교합니다.
-  bool _constantTimeEquals(String a, String b) {
-    if (a.length != b.length) {
+  /// Returns 서명이 유효한지 여부
+  bool _verifySignature(List<int> messageBytes, List<int> signatureBytes) {
+    try {
+      final publicKey = _getPublicKey();
+      
+      // RSA-PSS 서명 검증
+      final signer = RSASigner(SHA256Digest(), 'SHA-256/PSS');
+      signer.init(false, PublicKeyParameter<RSAPublicKey>(publicKey));
+      
+      return signer.verifySignature(messageBytes, Signature(signatureBytes));
+    } catch (e) {
       return false;
     }
-    
-    int result = 0;
-    for (int i = 0; i < a.length; i++) {
-      result |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+  }
+
+  /// 공개키 가져오기 (캐시)
+  RSAPublicKey _getPublicKey() {
+    if (_cachedPublicKey != null) {
+      return _cachedPublicKey!;
     }
     
-    return result == 0;
+    final publicKeyPem = Config.apiChannelKeyPublicKey;
+    _cachedPublicKey = _parsePublicKey(publicKeyPem);
+    return _cachedPublicKey!;
+  }
+
+  /// PEM 형식의 공개키 파싱
+  RSAPublicKey _parsePublicKey(String publicKeyPem) {
+    // PEM 헤더/푸터 제거
+    final pemLines = publicKeyPem
+        .split('\n')
+        .where((line) => 
+            !line.startsWith('-----BEGIN') && 
+            !line.startsWith('-----END') &&
+            line.trim().isNotEmpty)
+        .join('');
+    
+    // Base64 디코딩
+    final keyBytes = base64Decode(pemLines);
+    
+    // PKCS#1 형식으로 파싱
+    final parser = PKCS1PublicKeyParser();
+    final publicKey = parser.parsePublicKey(keyBytes);
+    
+    return publicKey as RSAPublicKey;
   }
 }
