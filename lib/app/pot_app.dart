@@ -192,54 +192,40 @@ class _Listeners extends StatelessWidget {
                   }
                   
                   if (finalKey != null && finalKey.isNotEmpty) {
-                    // 키 검증
+                    // 서명 검증 (필수)
                     final validator = sl<ApiChannelKeyValidator>();
                     final validationResult = validator.validate(finalKey);
                     
-                    if (validationResult.isValid && validationResult.channel != null) {
-                      // 유효한 키인 경우
-                      // 히든메뉴 활성화
-                      context.read<HiddenMenuBloc>().add(
-                        HiddenMenuEvent.tryEnable(finalKey),
-                      );
-                      
-                      // API 채널 변경
-                      context.read<ApiChannelBloc>().add(
-                        ApiChannelEvent.setChannel(validationResult.channel!),
-                      );
-                      
+                    if (!validationResult.isValid) {
+                      // 검증 실패 - 서명이 유효하지 않음
                       context.showToast(
-                        'API channel changed to ${validationResult.channel!.name}',
+                        'Invalid API channel key: ${validationResult.error ?? "Unknown error"}',
                       );
-                    } else {
-                      // 검증 실패 - 기존 방식으로 폴백 (하위 호환성)
-                      // 히든메뉴 활성화 시도
-                      context.read<HiddenMenuBloc>().add(
-                        HiddenMenuEvent.tryEnable(finalKey),
-                      );
-                      
-                      // API 채널 변경 - key 값이 채널 이름인지 확인
-                      final channelName = finalKey.toLowerCase();
-                      ApiChannel? targetChannel;
-                      for (final channel in ApiChannel.values) {
-                        if (channel.name.toLowerCase() == channelName) {
-                          targetChannel = channel;
-                          break;
-                        }
-                      }
-                      
-                      // 채널이 발견되면 변경
-                      if (targetChannel != null) {
-                        context.read<ApiChannelBloc>().add(
-                          ApiChannelEvent.setChannel(targetChannel),
-                        );
-                      } else {
-                        // 검증 실패 메시지 표시
-                        context.showToast(
-                          'Invalid API channel key: ${validationResult.error ?? "Unknown error"}',
-                        );
-                      }
+                      L.w('API channel key validation failed: ${validationResult.error}');
+                      return;
                     }
+                    
+                    if (validationResult.channel == null) {
+                      // 채널 정보가 없음 (이론적으로 발생하지 않아야 함)
+                      context.showToast('Invalid API channel key: Channel not found');
+                      L.e('API channel key validation: Channel is null');
+                      return;
+                    }
+                    
+                    // 서명 검증 성공 - 유효한 키
+                    // 히든메뉴 활성화
+                    context.read<HiddenMenuBloc>().add(
+                      HiddenMenuEvent.tryEnable(finalKey),
+                    );
+                    
+                    // API 채널 변경
+                    context.read<ApiChannelBloc>().add(
+                      ApiChannelEvent.setChannel(validationResult.channel!),
+                    );
+                    
+                    context.showToast(
+                      'API channel changed to ${validationResult.channel!.name}',
+                    );
                   }
                 } catch (e) {
                   L.e(e);

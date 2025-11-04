@@ -81,17 +81,27 @@ class ApiChannelKeyValidator {
       }
 
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      
+      // 미래 타임스탬프 거부 (클럭 스큐 허용: 5분)
+      const clockSkewSeconds = 5 * 60;
+      if (timestamp > now + clockSkewSeconds) {
+        return const ApiChannelKeyValidationResult.invalid(
+          'Key timestamp is in the future',
+        );
+      }
+      
+      // 만료 시간 검증
       if (timestamp < now - _expirationSeconds) {
         return const ApiChannelKeyValidationResult.invalid(
           'Key has expired',
         );
       }
 
-      // 서명 검증
+      // 서명 검증 (타이밍 공격 방지를 위한 상수 시간 비교)
       final message = '$channelName:$timestampStr';
       final expectedSignature = _computeSignature(message);
       
-      if (signature != expectedSignature) {
+      if (!_constantTimeEquals(signature, expectedSignature)) {
         return const ApiChannelKeyValidationResult.invalid(
           'Invalid signature',
         );
@@ -120,5 +130,21 @@ class ApiChannelKeyValidator {
   /// envied를 통해 환경 변수에서 가져옴
   String _getSecret() {
     return Config.apiChannelKeySecret;
+  }
+
+  /// 상수 시간 문자열 비교 (타이밍 공격 방지)
+  /// 
+  /// 두 문자열이 동일한지 상수 시간에 비교합니다.
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    
+    int result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    
+    return result == 0;
   }
 }
