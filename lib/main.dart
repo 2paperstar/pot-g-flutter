@@ -27,8 +27,6 @@ Future<void> main() async {
   }
   await Hive.initFlutter();
   Hive.registerAdapter(HiddenMenuLevelAdapter());
-  Hive.registerAdapter(ApiChannelAdapter());
-  Hive.registerAdapter(ApiChannelSettingsAdapter());
   await configureDependencies();
   runApp(TranslationProvider(child: const PotApp()));
 }

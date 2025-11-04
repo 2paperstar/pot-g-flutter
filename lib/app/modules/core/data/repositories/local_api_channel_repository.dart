@@ -11,7 +11,7 @@ import '../../domain/repositories/api_channel_repository.dart';
 
 @Singleton(as: ApiChannelRepository)
 class LocalApiChannelRepository implements ApiChannelRepository {
-  Box<ApiChannelSettings>? _box;
+  Box<Map>? _box;
   final _subject = BehaviorSubject<ApiChannel>.seeded(ApiChannel.byMode());
   static const String _boxName = 'api_channel_settings';
   static const String _key = 'settings';
@@ -28,25 +28,32 @@ class LocalApiChannelRepository implements ApiChannelRepository {
     // 1분마다 만료 시간 확인
     Timer.periodic(const Duration(minutes: 1), (timer) async {
       final box = await _ensureBox();
-      final settings = box.get(_key);
-      if (settings != null &&
-          settings.expiredAt != null &&
-          DateTime.now().isAfter(settings.expiredAt!)) {
-        await _setChannelToProduction();
+      final json = box.get(_key) as Map?;
+      if (json != null) {
+        final settings = ApiChannelSettings.fromJson(
+          Map<String, dynamic>.from(json),
+        );
+        if (settings.expiredAt != null &&
+            DateTime.now().isAfter(settings.expiredAt!)) {
+          await _setChannelToProduction();
+        }
       }
     });
   }
 
-  Future<Box<ApiChannelSettings>> _ensureBox() async {
+  Future<Box<Map>> _ensureBox() async {
     _box ??= await Hive.openBox(_boxName);
     return _box!;
   }
 
   Future<void> _loadAndValidateChannel() async {
     final box = await _ensureBox();
-    final settings = box.get(_key);
+    final json = box.get(_key) as Map?;
 
-    if (settings != null) {
+    if (json != null) {
+      final settings = ApiChannelSettings.fromJson(
+        Map<String, dynamic>.from(json),
+      );
       // expiredAt이 설정되어 있고 만료되었으면 production으로 복귀
       if (settings.expiredAt != null &&
           DateTime.now().isAfter(settings.expiredAt!)) {
@@ -63,7 +70,8 @@ class LocalApiChannelRepository implements ApiChannelRepository {
 
   Future<void> _setChannelToProduction() async {
     final box = await _ensureBox();
-    await box.put(_key, ApiChannelSettings(channel: ApiChannel.prod));
+    final settings = ApiChannelSettings(channel: ApiChannel.prod);
+    await box.put(_key, settings.toJson());
     _subject.add(ApiChannel.prod);
   }
 
@@ -86,7 +94,7 @@ class LocalApiChannelRepository implements ApiChannelRepository {
       channel: channel,
       expiredAt: expiredAt,
     );
-    await box.put(_key, settings);
+    await box.put(_key, settings.toJson());
   }
 
   @override
@@ -100,6 +108,10 @@ class LocalApiChannelRepository implements ApiChannelRepository {
 
   Future<ApiChannelSettings?> getSettings() async {
     final box = await _ensureBox();
-    return box.get(_key);
+    final json = box.get(_key) as Map?;
+    if (json == null) return null;
+    return ApiChannelSettings.fromJson(
+      Map<String, dynamic>.from(json),
+    );
   }
 }

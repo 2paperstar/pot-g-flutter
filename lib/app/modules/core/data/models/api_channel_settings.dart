@@ -1,12 +1,7 @@
-import 'package:hive_ce/hive.dart';
 import 'package:pot_g/app/modules/core/domain/enums/api_channel.dart';
 
-@HiveType(typeId: 1)
-class ApiChannelSettings extends HiveObject {
-  @HiveField(0)
+class ApiChannelSettings {
   final ApiChannel channel;
-
-  @HiveField(1)
   final DateTime? expiredAt;
 
   ApiChannelSettings({
@@ -14,8 +9,23 @@ class ApiChannelSettings extends HiveObject {
     this.expiredAt,
   });
 
-  const ApiChannelSettings.const({
-    required this.channel,
-    this.expiredAt,
-  });
+  Map<String, dynamic> toJson() => {
+        'channel': channel.name,
+        'expiredAt': expiredAt?.millisecondsSinceEpoch,
+      };
+
+  factory ApiChannelSettings.fromJson(Map<String, dynamic> json) {
+    final channelName = json['channel'] as String;
+    final channel = ApiChannel.values.firstWhere(
+      (e) => e.name == channelName,
+      orElse: () => ApiChannel.byMode(),
+    );
+    final expiredAtMs = json['expiredAt'] as int?;
+    return ApiChannelSettings(
+      channel: channel,
+      expiredAt: expiredAtMs != null
+          ? DateTime.fromMillisecondsSinceEpoch(expiredAtMs)
+          : null,
+    );
+  }
 }

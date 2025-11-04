@@ -1,24 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:hive_ce/hive.dart';
 
-@HiveType(typeId: 2)
 enum ApiChannel {
-  @HiveField(0)
   dev(
     'https://api.dev.pot-g.gistory.me/',
     'wss://api.dev.pot-g.gistory.me/ws',
     'https://dev.pot-g.gistory.me/',
     Colors.orange,
   ),
-  @HiveField(1)
   qa(
     'https://api.qa.pot-g.gistory.me/',
     'wss://api.qa.pot-g.gistory.me/ws',
     'https://qa.pot-g.gistory.me/',
     Colors.blue,
   ),
-  @HiveField(2)
   prod(
     'https://api.pot-g.gistory.me/',
     'wss://api.pot-g.gistory.me/ws',
