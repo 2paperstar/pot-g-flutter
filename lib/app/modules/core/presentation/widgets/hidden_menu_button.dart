@@ -78,6 +78,7 @@ class _ButtonState extends State<_Button> {
           color: Colors.black.withValues(
             alpha: _count < 5 ? 0 : ((_count - 5) / 20),
           ),
+          child: widget.requireEnabled ? null : const Icon(Icons.more_vert),
         ),
       ),
     );
