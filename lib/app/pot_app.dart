@@ -13,6 +13,7 @@ import 'package:pot_g/app/modules/common/presentation/extensions/toast.dart';
 import 'package:pot_g/app/modules/common/presentation/utils/log.dart';
 import 'package:pot_g/app/modules/common/presentation/utils/log_observer.dart';
 import 'package:pot_g/app/modules/core/domain/enums/api_channel.dart';
+import 'package:pot_g/app/modules/core/domain/repositories/api_channel_key_validator.dart';
 import 'package:pot_g/app/modules/core/presentation/bloc/api_channel_bloc.dart';
 import 'package:pot_g/app/modules/core/presentation/bloc/app_version_bloc.dart';
 import 'package:pot_g/app/modules/core/presentation/bloc/hidden_menu_bloc.dart';
@@ -191,30 +192,58 @@ class _Listeners extends StatelessWidget {
                   }
                   
                   if (finalKey != null && finalKey.isNotEmpty) {
-                    // 히든메뉴 활성화
-                    context.read<HiddenMenuBloc>().add(
-                      HiddenMenuEvent.tryEnable(finalKey),
-                    );
+                    // 키 검증
+                    final validator = sl<ApiChannelKeyValidator>();
+                    final validationResult = validator.validate(finalKey);
                     
-                    // API 채널 변경 - key 값이 채널 이름인지 확인
-                    final channelName = finalKey.toLowerCase();
-                    ApiChannel? targetChannel;
-                    for (final channel in ApiChannel.values) {
-                      if (channel.name.toLowerCase() == channelName) {
-                        targetChannel = channel;
-                        break;
-                      }
-                    }
-                    
-                    // 채널이 발견되면 변경
-                    if (targetChannel != null) {
-                      context.read<ApiChannelBloc>().add(
-                        ApiChannelEvent.setChannel(targetChannel),
+                    if (validationResult.isValid && validationResult.channel != null) {
+                      // 유효한 키인 경우
+                      // 히든메뉴 활성화
+                      context.read<HiddenMenuBloc>().add(
+                        HiddenMenuEvent.tryEnable(finalKey),
                       );
+                      
+                      // API 채널 변경
+                      context.read<ApiChannelBloc>().add(
+                        ApiChannelEvent.setChannel(validationResult.channel!),
+                      );
+                      
+                      context.showToast(
+                        'API channel changed to ${validationResult.channel!.name}',
+                      );
+                    } else {
+                      // 검증 실패 - 기존 방식으로 폴백 (하위 호환성)
+                      // 히든메뉴 활성화 시도
+                      context.read<HiddenMenuBloc>().add(
+                        HiddenMenuEvent.tryEnable(finalKey),
+                      );
+                      
+                      // API 채널 변경 - key 값이 채널 이름인지 확인
+                      final channelName = finalKey.toLowerCase();
+                      ApiChannel? targetChannel;
+                      for (final channel in ApiChannel.values) {
+                        if (channel.name.toLowerCase() == channelName) {
+                          targetChannel = channel;
+                          break;
+                        }
+                      }
+                      
+                      // 채널이 발견되면 변경
+                      if (targetChannel != null) {
+                        context.read<ApiChannelBloc>().add(
+                          ApiChannelEvent.setChannel(targetChannel),
+                        );
+                      } else {
+                        // 검증 실패 메시지 표시
+                        context.showToast(
+                          'Invalid API channel key: ${validationResult.error ?? "Unknown error"}',
+                        );
+                      }
                     }
                   }
                 } catch (e) {
                   L.e(e);
+                  context.showToast('Error processing API channel key: $e');
                 }
                 // /test 경로는 라우팅하지 않음
                 return;
